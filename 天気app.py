@@ -32,10 +32,15 @@ def get_weather(latitude, longitude):
 
 def get_weather_forecast(latitude, longitude):
     url = f"http://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    response = requests.get(url)
-    # デバッグ: APIレスポンスの内容を確認
-    st.write("Forecast API Response:", response.json())  # この行を追加
-    return response.json()
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # HTTPエラーがある場合例外を発生させる
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"天気予報の取得中にエラーが発生しました: {str(e)}")
+        st.error(f"URL: {url}")
+        st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
+        return None  # エラーの場合はNoneを返す
 
 def get_coordinates(address):
     result = gmaps.geocode(address)
