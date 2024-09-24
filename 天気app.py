@@ -116,7 +116,7 @@ def analyze_outing(bedrock_client, weather_data, forecast_data, travel_info, pur
     - 交通状況を考慮した所要時間: {travel_info['duration_in_traffic']}
 
     以下の質問に具体的に答えてください：
-    1. 目的地に今すぐ行くべきでしょうか？それとも別の日に行くべきでしょうか？理由も説明してください。
+    1. 目的地に今日行くべきでしょうか？それとも別の日に行くべきでしょうか？理由も説明してください。
     2. もし別の日に行くべきだと判断した場合、5日間の予報の中でどの日が最適だと思われますか？その理由も説明してください。
     3. 外出目的を達成するのに、現在および今後の天候はどのような影響を与えると予想されますか？具体的に説明してください。
     4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？詳しく説明してください。
@@ -124,7 +124,7 @@ def analyze_outing(bedrock_client, weather_data, forecast_data, travel_info, pur
     追加の質問: {additional_question}
     この追加の質問にも、具体的かつ詳細に答えてください。
 
-    回答は各質問に対して明確に分けて、簡潔にまとめてください。
+    回答は各質問に対して明確に分けて、天気と交通情報を引用し簡潔にまとめてください。
     """
 
     messages = [
@@ -169,9 +169,9 @@ def main():
     st.sidebar.header("AWS認証情報")
     aws_access_key_id = st.sidebar.text_input("AWS Access Key ID", type="password")
     aws_secret_access_key = st.sidebar.text_input("AWS Secret Access Key", type="password")
-    aws_region = st.sidebar.text_input("AWSリージョン", value="us-east-1")
+    aws_region = st.sidebar.text_input("AWSリージョン", value="ap-northeast-1")
 
-    st.sidebar.warning("注意: API키와 AWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
+    st.sidebar.warning("注意: API AWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
 
     # 入力チェック
     if not google_maps_api_key:
