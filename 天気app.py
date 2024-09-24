@@ -28,19 +28,18 @@ AWS_REGION = "ap-northeast-1"
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-def authenticate_aws(account_id, password):
+def authenticate_aws(access_key_id, secret_access_key):
     try:
         # STS クライアントを使用して認証をテスト
         sts_client = boto3.client('sts',
-                                  aws_access_key_id=account_id,
-                                  aws_secret_access_key=password,
+                                  aws_access_key_id=access_key_id,
+                                  aws_secret_access_key=secret_access_key,
                                   region_name=AWS_REGION)
         
         # GetCallerIdentity を呼び出してクレデンシャルをテスト
         caller_identity = sts_client.get_caller_identity()
+        account_id = caller_identity['Account']
         user_arn = caller_identity['Arn']
-
-        logger.info(f"認証成功: アカウントID: {account_id}, ARN: {user_arn}")
 
         st.success("AWS認証成功:")
         st.write(f"アカウントID: {account_id}")
@@ -48,13 +47,12 @@ def authenticate_aws(account_id, password):
 
         # Bedrock クライアントの初期化
         bedrock_client = boto3.client('bedrock-runtime',
-                                      aws_access_key_id=account_id,
-                                      aws_secret_access_key=password,
+                                      aws_access_key_id=access_key_id,
+                                      aws_secret_access_key=secret_access_key,
                                       region_name=AWS_REGION)
         
         return bedrock_client
     except Exception as e:
-        logger.error(f"AWS認証エラー: {str(e)}")
         st.error(f"AWS認証エラー: {str(e)}")
     
     return None
@@ -222,20 +220,27 @@ def main():
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
 
     # IAMユーザーログイン
+    def main():
+        st.title("外出判断アプリ")
+
+    # セッション状態の初期化
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
 
     if not st.session_state.logged_in:
-        account_id = st.text_input("AWS アカウントID")
-        password = st.text_input("パスワード", type="password")
+        st.write("AWSアカウントの認証情報を入力してください。")
+        st.warning("注意: アクセスキーとシークレットキーは安全に管理してください。")
+        access_key_id = st.text_input("AWS アクセスキーID")
+        secret_access_key = st.text_input("AWS シークレットアクセスキー", type="password")
         if st.button("ログイン"):
-            aws_client = authenticate_aws(account_id, password)
+            aws_client = authenticate_aws(access_key_id, secret_access_key)
             if aws_client:
                 st.session_state.logged_in = True
                 st.session_state.aws_client = aws_client
                 st.experimental_rerun()
     else:
     # ログイン後の処理
+        st.write("ログイン成功！アプリの機能をここに実装します。")
         st.subheader("📍 場所情報")
         col1, col2 = st.columns(2)
     
@@ -296,9 +301,9 @@ def main():
 
     # ログアウトボタン
     if st.button("ログアウト"):
-        st.session_state.logged_in = False
-        st.session_state.aws_client = None
-        st.experimental_rerun()
+            st.session_state.logged_in = False
+            st.session_state.aws_client = None
+            st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
