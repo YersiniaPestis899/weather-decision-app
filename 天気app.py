@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import json
 from datetime import datetime, timedelta
-import boto3
 import googlemaps
 import pandas as pd
 import folium
@@ -14,41 +13,33 @@ import os
 load_dotenv()
 
 # API keys and endpoints
-OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-BEDROCK_CLIENT = boto3.client('bedrock-runtime', region_name=AWS_REGION)
+OPENWEATHERMAP_API_KEY = st.secrets["OPENWEATHER_API_KEY"]
+GOOGLE_MAPS_API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]
 
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 def get_weather(latitude, longitude):
-    url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
     try:
         response = requests.get(url)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"現在の天気情報の取得中にエラーが発生しました: {str(e)}")
-        st.error(f"URL: {url}")
+        st.error(f"URL: {url.replace(OPENWEATHERMAP_API_KEY, 'API_KEY')}")
         st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
         return None
 
 def get_weather_forecast(latitude, longitude):
     url = f"https://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    # 残りのコードは変更なし
-    
-    # デバッグ情報
-    st.sidebar.text(f"Forecast URL: {url[:50]}...") # URLの最初の50文字のみを表示
-    
     try:
         response = requests.get(url)
-        st.sidebar.text(f"Status Code: {response.status_code}")
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"天気予報の取得中にエラーが発生しました: {str(e)}")
-        st.error(f"URL: {url}")
+        st.error(f"URL: {url.replace(OPENWEATHERMAP_API_KEY, 'API_KEY')}")
         st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
         return None
 
@@ -80,9 +71,7 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
     forecast_summary = process_forecast_data(forecast_data)
     forecast_text = forecast_summary.to_string(index=False)
 
-    user_message = f"""
-    あなたは外出判断のアシスタントです。以下の情報に基づいて、目的地に行くべきか、行かないべきかを判断し、理由とともに回答してください。
-
+    analysis = f"""
     外出目的: {purpose}
 
     現在の天気情報:
@@ -99,41 +88,24 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
     - 通常の所要時間: {travel_info['duration']}
     - 交通状況を考慮した所要時間: {travel_info['duration_in_traffic']}
 
-    これらの情報を考慮して、以下の質問に答えてください：
-    1. 目的地に今日行くべきでしょうか？それとも別の日に行くべきでしょうか？
-    2. もし別の日に行くべきだと判断した場合、5日間の予報の中でどの日が最適だと思われますか？
-    3. 外出目的を達成するのに、現在および今後の天候はどのような影響を与えると予想されますか？
-    4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？
+    分析:
+    1. 今日の外出について:
+       現在の天気と目的を考慮すると、{"今日の外出は適していると思われます。" if weather_data['weather'][0]['id'] < 800 else "今日の外出は天候の影響を受ける可能性があります。"}
 
-    追加の質問: {additional_question}
+    2. 最適な外出日:
+       5日間の予報を見ると、{forecast_summary.iloc[forecast_summary['天気'].str.contains('晴れ|曇り').idxmax()]['日付']}が最も外出に適していると思われます。
 
-    回答は簡潔にまとめ、理由も添えて説明してください。また、追加の質問にも必ず答えてください。
+    3. 天候の影響:
+       {purpose}という目的に対して、現在および今後の天候は{"好影響を与えると予想されます。" if '晴れ' in weather_data['weather'][0]['description'] else "注意が必要かもしれません。"}
+
+    4. 外出のタイミング:
+       移動時間と交通状況を考慮すると、{travel_info['duration_in_traffic']}かかる予定です。混雑を避けるため、早朝か夕方以降の外出をお勧めします。
+
+    追加の回答: {additional_question}
+    {additional_question if additional_question else "追加の質問がありませんでした。"}
     """
 
-    messages = [
-        {
-            "role": "user",
-            "content": user_message
-        }
-    ]
-
-    body = json.dumps({
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 200000,
-        "messages": messages,
-        "temperature": 0.5,
-        "top_p": 0.9,
-    })
-
-    response = BEDROCK_CLIENT.invoke_model(
-        modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
-        contentType="application/json",
-        accept="application/json",
-        body=body
-    )
-
-    response_body = json.loads(response['body'].read())
-    return response_body['content'][0]['text']
+    return analysis
 
 def process_forecast_data(forecast_data):
     processed_data = []
@@ -183,9 +155,6 @@ def main():
 
     st.title("🏠🚗 外出判断アプリ")
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
-
-    # AWSリージョンの表示（デバッグ用）
-    st.sidebar.text(f"使用中のAWSリージョン: {AWS_REGION}")
 
     col1, col2 = st.columns(2)
 
