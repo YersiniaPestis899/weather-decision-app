@@ -36,7 +36,7 @@ def initialize_aws_client(aws_access_key_id, aws_secret_access_key):
         client = boto3.client('bedrock-runtime',
                               aws_access_key_id=aws_access_key_id,
                               aws_secret_access_key=aws_secret_access_key,
-                              region_name='us-east-1')  # リージョンは適宜変更してください
+                              region_name='ap-northeast-1')  # リージョンは適宜変更してください
         return client
     except Exception as e:
         st.error(f"AWSクライアントの初期化に失敗しました: {str(e)}")
