@@ -16,7 +16,8 @@ load_dotenv()
 # API keys and endpoints
 OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")  # デフォルトのリージョンを設定
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+BEDROCK_CLIENT = boto3.client('bedrock-runtime', region_name=AWS_REGION)
 
 # Initialize Bedrock client with specified region
 BEDROCK_CLIENT = boto3.client('bedrock-runtime', region_name=AWS_REGION)
