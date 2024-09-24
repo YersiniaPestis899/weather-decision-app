@@ -20,26 +20,18 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-# ユーザー認証関数
-def authenticate_user(username, password):
-    # 実際の実装ではデータベースを使用するべきです
-    # この例では簡単のためにハードコードしています
-    users = {
-        "user1": "password1",
-        "user2": "password2"
-    }
-    return username in users and users[username] == password
-
-# AWSクライアントの初期化関数
-def initialize_aws_client(aws_access_key_id, aws_secret_access_key):
+# AWSクライアントの初期化と認証関数
+def authenticate_aws(aws_access_key_id, aws_secret_access_key):
     try:
         client = boto3.client('bedrock-runtime',
                               aws_access_key_id=aws_access_key_id,
                               aws_secret_access_key=aws_secret_access_key,
                               region_name='us-east-1')  # リージョンは適宜変更してください
+        # 認証をテストするために簡単な操作を実行
+        client.list_foundation_models()
         return client
     except Exception as e:
-        st.error(f"AWSクライアントの初期化に失敗しました: {str(e)}")
+        st.error(f"AWS認証に失敗しました: {str(e)}")
         return None
 
 def get_weather(latitude, longitude):
@@ -183,84 +175,76 @@ def main():
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
 
     # セッション状態の初期化
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
+    if 'aws_authenticated' not in st.session_state:
+        st.session_state.aws_authenticated = False
 
-    if not st.session_state.logged_in:
-        st.subheader("ログイン")
-        username = st.text_input("ユーザー名")
-        password = st.text_input("パスワード", type="password")
-        if st.button("ログイン"):
-            if authenticate_user(username, password):
-                st.session_state.logged_in = True
-                st.success("ログインに成功しました！")
-                st.experimental_rerun()
-            else:
-                st.error("ログインに失敗しました。")
-    else:
-        # AWS認証情報の入力
+    if not st.session_state.aws_authenticated:
+        st.subheader("AWS認証")
+        st.warning("このアプリケーションはあなたのAWS認証情報を使用します。セキュリティに注意してください。")
         aws_access_key_id = st.text_input("AWS Access Key ID", type="password")
         aws_secret_access_key = st.text_input("AWS Secret Access Key", type="password")
-
-        if aws_access_key_id and aws_secret_access_key:
-            aws_client = initialize_aws_client(aws_access_key_id, aws_secret_access_key)
+        if st.button("認証"):
+            aws_client = authenticate_aws(aws_access_key_id, aws_secret_access_key)
             if aws_client:
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.subheader("📍 場所情報")
-                    start_location = st.text_input("出発地", "")
-                    end_location = st.text_input("目的地", "")
-                    purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
-                    additional_question = st.text_input("追加の質問（オプション）", "")
-
-                if st.button("外出判断を実行", key="run_analysis"):
-                    with st.spinner("分析中..."):
-                        try:
-                            start_coords = get_coordinates(start_location)
-                            end_coords = get_coordinates(end_location)
-                            weather_data = get_weather(start_coords[0], start_coords[1])
-                            forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
-                            travel_info = get_travel_info(start_location, end_location)
-
-                            with col2:
-                                st.subheader("🗺️ 位置情報")
-                                map = create_map(start_coords, end_coords)
-                                folium_static(map)
-
-                            st.subheader("🌤️ 現在の天気情報")
-                            weather_col1, weather_col2 = st.columns(2)
-                            with weather_col1:
-                                st.metric("天気", weather_data['weather'][0]['description'])
-                                st.metric("気温", f"{weather_data['main']['temp']}°C")
-                            with weather_col2:
-                                st.metric("湿度", f"{weather_data['main']['humidity']}%")
-                                st.metric("風速", f"{weather_data['wind']['speed']} m/s")
-
-                            st.subheader("📅 5日間の天気予報")
-                            forecast_df = process_forecast_data(forecast_data)
-                            st.dataframe(forecast_df, hide_index=True)
-
-                            st.subheader("🚗 移動情報")
-                            travel_col1, travel_col2, travel_col3 = st.columns(3)
-                            with travel_col1:
-                                st.metric("距離", travel_info['distance'])
-                            with travel_col2:
-                                st.metric("通常の所要時間", travel_info['duration'])
-                            with travel_col3:
-                                st.metric("交通状況考慮時間", travel_info['duration_in_traffic'])
-
-                            recommendation = analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, aws_client)
-
-                            st.subheader("🤖 AIによる外出判断")
-                            st.info(recommendation)
-
-                        except Exception as e:
-                            st.error(f"エラーが発生しました: {str(e)}")
+                st.session_state.aws_authenticated = True
+                st.session_state.aws_client = aws_client
+                st.success("AWS認証に成功しました！")
+                st.experimental_rerun()
             else:
-                st.warning("有効なAWS認証情報を入力してください。")
-        else:
-            st.warning("AWS認証情報を入力してください。")
+                st.error("AWS認証に失敗しました。")
+    else:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("📍 場所情報")
+            start_location = st.text_input("出発地", "")
+            end_location = st.text_input("目的地", "")
+            purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
+            additional_question = st.text_input("追加の質問（オプション）", "")
+
+        if st.button("外出判断を実行", key="run_analysis"):
+            with st.spinner("分析中..."):
+                try:
+                    start_coords = get_coordinates(start_location)
+                    end_coords = get_coordinates(end_location)
+                    weather_data = get_weather(start_coords[0], start_coords[1])
+                    forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
+                    travel_info = get_travel_info(start_location, end_location)
+
+                    with col2:
+                        st.subheader("🗺️ 位置情報")
+                        map = create_map(start_coords, end_coords)
+                        folium_static(map)
+
+                    st.subheader("🌤️ 現在の天気情報")
+                    weather_col1, weather_col2 = st.columns(2)
+                    with weather_col1:
+                        st.metric("天気", weather_data['weather'][0]['description'])
+                        st.metric("気温", f"{weather_data['main']['temp']}°C")
+                    with weather_col2:
+                        st.metric("湿度", f"{weather_data['main']['humidity']}%")
+                        st.metric("風速", f"{weather_data['wind']['speed']} m/s")
+
+                    st.subheader("📅 5日間の天気予報")
+                    forecast_df = process_forecast_data(forecast_data)
+                    st.dataframe(forecast_df, hide_index=True)
+
+                    st.subheader("🚗 移動情報")
+                    travel_col1, travel_col2, travel_col3 = st.columns(3)
+                    with travel_col1:
+                        st.metric("距離", travel_info['distance'])
+                    with travel_col2:
+                        st.metric("通常の所要時間", travel_info['duration'])
+                    with travel_col3:
+                        st.metric("交通状況考慮時間", travel_info['duration_in_traffic'])
+
+                    recommendation = analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, st.session_state.aws_client)
+
+                    st.subheader("🤖 AIによる外出判断")
+                    st.info(recommendation)
+
+                except Exception as e:
+                    st.error(f"エラーが発生しました: {str(e)}")
 
 if __name__ == "__main__":
     main()
