@@ -1,47 +1,56 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
+import boto3
 import googlemaps
 import pandas as pd
 import folium
 from streamlit_folium import folium_static
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 # API keys and endpoints
-OPENWEATHERMAP_API_KEY = st.secrets["OPENWEATHER_API_KEY"]
-GOOGLE_MAPS_API_KEY = st.secrets["GOOGLE_MAPS_API_KEY"]
+OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
+# ユーザー認証関数
+def authenticate_user(username, password):
+    # 実際の実装ではデータベースを使用するべきです
+    # この例では簡単のためにハードコードしています
+    users = {
+        "user1": "password1",
+        "user2": "password2"
+    }
+    return username in users and users[username] == password
+
+# AWSクライアントの初期化関数
+def initialize_aws_client(aws_access_key_id, aws_secret_access_key):
+    try:
+        client = boto3.client('bedrock-runtime',
+                              aws_access_key_id=aws_access_key_id,
+                              aws_secret_access_key=aws_secret_access_key,
+                              region_name='us-east-1')  # リージョンは適宜変更してください
+        return client
+    except Exception as e:
+        st.error(f"AWSクライアントの初期化に失敗しました: {str(e)}")
+        return None
+
 def get_weather(latitude, longitude):
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"現在の天気情報の取得中にエラーが発生しました: {str(e)}")
-        st.error(f"URL: {url.replace(OPENWEATHERMAP_API_KEY, 'API_KEY')}")
-        st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
-        return None
+    response = requests.get(url)
+    return response.json()
 
 def get_weather_forecast(latitude, longitude):
     url = f"https://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"天気予報の取得中にエラーが発生しました: {str(e)}")
-        st.error(f"URL: {url.replace(OPENWEATHERMAP_API_KEY, 'API_KEY')}")
-        st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
-        return None
+    response = requests.get(url)
+    return response.json()
 
 def get_coordinates(address):
     result = gmaps.geocode(address)
@@ -64,14 +73,13 @@ def get_travel_info(origin, destination):
     else:
         raise ValueError(f"経路が見つかりませんでした: {origin} から {destination}")
 
-def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question):
-    if weather_data is None or forecast_data is None:
-        return "天気情報の取得に失敗したため、外出判断を行えません。"
-
+def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, aws_client):
     forecast_summary = process_forecast_data(forecast_data)
     forecast_text = forecast_summary.to_string(index=False)
 
-    analysis = f"""
+    user_message = f"""
+    あなたは外出判断のアシスタントです。以下の情報に基づいて、目的地に行くべきか、行かないべきかを判断し、理由とともに回答してください。
+
     外出目的: {purpose}
 
     現在の天気情報:
@@ -88,39 +96,57 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
     - 通常の所要時間: {travel_info['duration']}
     - 交通状況を考慮した所要時間: {travel_info['duration_in_traffic']}
 
-    分析:
-    1. 今日の外出について:
-       現在の天気と目的を考慮すると、{"今日の外出は適していると思われます。" if weather_data['weather'][0]['id'] < 800 else "今日の外出は天候の影響を受ける可能性があります。"}
+    これらの情報を考慮して、以下の質問に答えてください：
+    1. 目的地に今日行くべきでしょうか？それとも別の日に行くべきでしょうか？
+    2. もし別の日に行くべきだと判断した場合、5日間の予報の中でどの日が最適だと思われますか？
+    3. 外出目的を達成するのに、現在および今後の天候はどのような影響を与えると予想されますか？
+    4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？
 
-    2. 最適な外出日:
-       5日間の予報を見ると、{forecast_summary.iloc[forecast_summary['天気'].str.contains('晴れ|曇り').idxmax()]['日付']}が最も外出に適していると思われます。
+    追加の質問: {additional_question}
 
-    3. 天候の影響:
-       {purpose}という目的に対して、現在および今後の天候は{"好影響を与えると予想されます。" if '晴れ' in weather_data['weather'][0]['description'] else "注意が必要かもしれません。"}
-
-    4. 外出のタイミング:
-       移動時間と交通状況を考慮すると、{travel_info['duration_in_traffic']}かかる予定です。混雑を避けるため、早朝か夕方以降の外出をお勧めします。
-
-    追加の回答: {additional_question}
-    {additional_question if additional_question else "追加の質問がありませんでした。"}
+    回答は簡潔にまとめ、理由も添えて説明してください。また、追加の質問にも必ず答えてください。
     """
 
-    return analysis
+    messages = [
+        {
+            "role": "user",
+            "content": user_message
+        }
+    ]
+
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 200000,
+        "messages": messages,
+        "temperature": 0.5,
+        "top_p": 0.9,
+    })
+
+    try:
+        response = aws_client.invoke_model(
+            modelId="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            contentType="application/json",
+            accept="application/json",
+            body=body
+        )
+        response_body = json.loads(response['body'].read())
+        return response_body['content'][0]['text']
+    except Exception as e:
+        st.error(f"AI分析中にエラーが発生しました: {str(e)}")
+        return "AI分析に失敗しました。基本的な情報のみ表示します。"
 
 def process_forecast_data(forecast_data):
     processed_data = []
-    current_date = datetime.now().date()
     for item in forecast_data['list']:
         date = datetime.fromtimestamp(item['dt'])
-        if date.date() > current_date and len(processed_data) < 5:  # 今日を除く5日分のデータを取得
-            if date.hour == 12:  # 正午のデータのみを使用
-                processed_data.append({
-                    '日付': date.strftime('%Y-%m-%d'),
-                    '天気': item['weather'][0]['description'],
-                    '気温': f"{item['main']['temp']:.1f}°C",
-                    '湿度': f"{item['main']['humidity']}%",
-                    '風速': f"{item['wind']['speed']} m/s"
-                })
+        if date.hour == 12:  # 正午のデータのみを使用
+            processed_data.append({
+                '日付': date.strftime('%Y-%m-%d'),
+                '天気': item['weather'][0]['description'],
+                '気温': f"{item['main']['temp']:.1f}°C",
+                '湿度': f"{item['main']['humidity']}%",
+                '風速': f"{item['wind']['speed']} m/s"
+            })
     return pd.DataFrame(processed_data)
 
 def create_map(start_coords, end_coords):
@@ -156,62 +182,85 @@ def main():
     st.title("🏠🚗 外出判断アプリ")
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
 
-    col1, col2 = st.columns(2)
+    # セッション状態の初期化
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
 
-    with col1:
-        st.subheader("📍 場所情報")
-        start_location = st.text_input("出発地", "")
-        end_location = st.text_input("目的地", "")
-        purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
-        additional_question = st.text_input("追加の質問（オプション）", "")
+    if not st.session_state.logged_in:
+        st.subheader("ログイン")
+        username = st.text_input("ユーザー名")
+        password = st.text_input("パスワード", type="password")
+        if st.button("ログイン"):
+            if authenticate_user(username, password):
+                st.session_state.logged_in = True
+                st.success("ログインに成功しました！")
+                st.experimental_rerun()
+            else:
+                st.error("ログインに失敗しました。")
+    else:
+        # AWS認証情報の入力
+        aws_access_key_id = st.text_input("AWS Access Key ID", type="password")
+        aws_secret_access_key = st.text_input("AWS Secret Access Key", type="password")
 
-    if st.button("外出判断を実行", key="run_analysis"):
-        with st.spinner("分析中..."):
-            try:
-                start_coords = get_coordinates(start_location)
-                end_coords = get_coordinates(end_location)
-                weather_data = get_weather(start_coords[0], start_coords[1])
-                forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
-                travel_info = get_travel_info(start_location, end_location)
+        if aws_access_key_id and aws_secret_access_key:
+            aws_client = initialize_aws_client(aws_access_key_id, aws_secret_access_key)
+            if aws_client:
+                col1, col2 = st.columns(2)
 
-                if weather_data is None or forecast_data is None:
-                    st.error("天気情報の取得に失敗しました。APIキーを確認してください。")
-                    return
+                with col1:
+                    st.subheader("📍 場所情報")
+                    start_location = st.text_input("出発地", "")
+                    end_location = st.text_input("目的地", "")
+                    purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
+                    additional_question = st.text_input("追加の質問（オプション）", "")
 
-                with col2:
-                    st.subheader("🗺️ 位置情報")
-                    map = create_map(start_coords, end_coords)
-                    folium_static(map)
+                if st.button("外出判断を実行", key="run_analysis"):
+                    with st.spinner("分析中..."):
+                        try:
+                            start_coords = get_coordinates(start_location)
+                            end_coords = get_coordinates(end_location)
+                            weather_data = get_weather(start_coords[0], start_coords[1])
+                            forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
+                            travel_info = get_travel_info(start_location, end_location)
 
-                st.subheader("🌤️ 現在の天気情報")
-                weather_col1, weather_col2 = st.columns(2)
-                with weather_col1:
-                    st.metric("天気", weather_data['weather'][0]['description'])
-                    st.metric("気温", f"{weather_data['main']['temp']}°C")
-                with weather_col2:
-                    st.metric("湿度", f"{weather_data['main']['humidity']}%")
-                    st.metric("風速", f"{weather_data['wind']['speed']} m/s")
+                            with col2:
+                                st.subheader("🗺️ 位置情報")
+                                map = create_map(start_coords, end_coords)
+                                folium_static(map)
 
-                st.subheader("📅 5日間の天気予報")
-                forecast_df = process_forecast_data(forecast_data)
-                st.dataframe(forecast_df, hide_index=True)
+                            st.subheader("🌤️ 現在の天気情報")
+                            weather_col1, weather_col2 = st.columns(2)
+                            with weather_col1:
+                                st.metric("天気", weather_data['weather'][0]['description'])
+                                st.metric("気温", f"{weather_data['main']['temp']}°C")
+                            with weather_col2:
+                                st.metric("湿度", f"{weather_data['main']['humidity']}%")
+                                st.metric("風速", f"{weather_data['wind']['speed']} m/s")
 
-                st.subheader("🚗 移動情報")
-                travel_col1, travel_col2, travel_col3 = st.columns(3)
-                with travel_col1:
-                    st.metric("距離", travel_info['distance'])
-                with travel_col2:
-                    st.metric("通常の所要時間", travel_info['duration'])
-                with travel_col3:
-                    st.metric("交通状況考慮時間", travel_info['duration_in_traffic'])
+                            st.subheader("📅 5日間の天気予報")
+                            forecast_df = process_forecast_data(forecast_data)
+                            st.dataframe(forecast_df, hide_index=True)
 
-                recommendation = analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question)
+                            st.subheader("🚗 移動情報")
+                            travel_col1, travel_col2, travel_col3 = st.columns(3)
+                            with travel_col1:
+                                st.metric("距離", travel_info['distance'])
+                            with travel_col2:
+                                st.metric("通常の所要時間", travel_info['duration'])
+                            with travel_col3:
+                                st.metric("交通状況考慮時間", travel_info['duration_in_traffic'])
 
-                st.subheader("🤖 AIによる外出判断")
-                st.info(recommendation)
+                            recommendation = analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, aws_client)
 
-            except Exception as e:
-                st.error(f"エラーが発生しました: {str(e)}")
+                            st.subheader("🤖 AIによる外出判断")
+                            st.info(recommendation)
+
+                        except Exception as e:
+                            st.error(f"エラーが発生しました: {str(e)}")
+            else:
+                st.warning("有効なAWS認証情報を入力してください。")
+        else:
+            st.warning("AWS認証情報を入力してください。")
 
 if __name__ == "__main__":
     main()
