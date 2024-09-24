@@ -35,9 +35,15 @@ def get_weather(latitude, longitude):
         return None
 
 def get_weather_forecast(latitude, longitude):
-    url = f"http://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
+    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
+    # 残りのコードは変更なし
+    
+    # デバッグ情報
+    st.sidebar.text(f"Forecast URL: {url[:50]}...") # URLの最初の50文字のみを表示
+    
     try:
         response = requests.get(url)
+        st.sidebar.text(f"Status Code: {response.status_code}")
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
