@@ -9,14 +9,6 @@ import folium
 from streamlit_folium import folium_static
 import os
 from dotenv import load_dotenv
-import logging
-import boto3
-import streamlit as st
-import boto3
-
-# ロギングの設定
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -24,134 +16,62 @@ load_dotenv()
 # API keys and endpoints
 OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-AWS_REGION = "ap-northeast-1"
 
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
-def authenticate_aws(access_key_id, secret_access_key):
+# ユーザー認証関数
+def authenticate_user(username, password):
+    # 実際の実装ではデータベースを使用するべきです
+    # この例では簡単のためにハードコードしています
+    users = {
+        "user1": "password1",
+        "user2": "password2"
+    }
+    return username in users and users[username] == password
+
+# AWSクライアントの初期化関数
+def initialize_aws_client(aws_access_key_id, aws_secret_access_key):
     try:
-        # STS クライアントを使用して認証をテスト
-        sts_client = boto3.client('sts',
-                                  aws_access_key_id=access_key_id,
-                                  aws_secret_access_key=secret_access_key,
-                                  region_name=AWS_REGION)
-        
-        # GetCallerIdentity を呼び出してクレデンシャルをテスト
-        caller_identity = sts_client.get_caller_identity()
-        account_id = caller_identity['Account']
-        user_arn = caller_identity['Arn']
-
-        # Bedrock クライアントの初期化
-        bedrock_client = boto3.client('bedrock-runtime',
-                                      aws_access_key_id=access_key_id,
-                                      aws_secret_access_key=secret_access_key,
-                                      region_name=AWS_REGION)
-        
-        return bedrock_client, account_id, user_arn
+        client = boto3.client('bedrock-runtime',
+                              aws_access_key_id=aws_access_key_id,
+                              aws_secret_access_key=aws_secret_access_key,
+                              region_name='us-east-1')  # リージョンは適宜変更してください
+        return client
     except Exception as e:
-        st.error(f"AWS認証エラー: {str(e)}")
-        return None, None, None
-
-def login_form():
-    st.write("AWSアカウントの認証情報を入力してください。")
-    st.warning("注意: アクセスキーとシークレットキーは安全に管理してください。")
-    access_key_id = st.text_input("AWS アクセスキーID")
-    secret_access_key = st.text_input("AWS シークレットアクセスキー", type="password")
-    return access_key_id, secret_access_key
+        st.error(f"AWSクライアントの初期化に失敗しました: {str(e)}")
+        return None
 
 def get_weather(latitude, longitude):
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        logger.error(f"天気情報の取得に失敗: {str(e)}")
-        st.error(f"天気情報の取得に失敗しました: {str(e)}")
-        return None
+    response = requests.get(url)
+    return response.json()
 
 def get_weather_forecast(latitude, longitude):
     url = f"https://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        logger.error(f"天気予報の取得に失敗: {str(e)}")
-        st.error(f"天気予報の取得に失敗しました: {str(e)}")
-        return None
+    response = requests.get(url)
+    return response.json()
 
 def get_coordinates(address):
-    try:
-        result = gmaps.geocode(address)
-        if result:
-            location = result[0]['geometry']['location']
-            return (location['lat'], location['lng'])
-        else:
-            raise ValueError(f"住所が見つかりませんでした: {address}")
-    except Exception as e:
-        logger.error(f"座標の取得に失敗: {str(e)}")
-        st.error(f"座標の取得に失敗しました: {str(e)}")
-        return None
+    result = gmaps.geocode(address)
+    if result:
+        location = result[0]['geometry']['location']
+        return (location['lat'], location['lng'])
+    else:
+        raise ValueError(f"住所が見つかりませんでした: {address}")
 
 def get_travel_info(origin, destination):
-    try:
-        now = datetime.now()
-        directions_result = gmaps.directions(origin, destination, mode="driving", departure_time=now)
-        if directions_result:
-            leg = directions_result[0]['legs'][0]
-            return {
-                'distance': leg['distance']['text'],
-                'duration': leg['duration']['text'],
-                'duration_in_traffic': leg['duration_in_traffic']['text']
-            }
-        else:
-            raise ValueError(f"経路が見つかりませんでした: {origin} から {destination}")
-    except Exception as e:
-        logger.error(f"移動情報の取得に失敗: {str(e)}")
-        st.error(f"移動情報の取得に失敗しました: {str(e)}")
-        return None
-def process_forecast_data(forecast_data):
-    processed_data = []
-    for item in forecast_data['list']:
-        date = datetime.fromtimestamp(item['dt'])
-        if date.hour == 12:  # 正午のデータのみを使用
-            processed_data.append({
-                '日付': date.strftime('%Y-%m-%d'),
-                '天気': item['weather'][0]['description'],
-                '気温': f"{item['main']['temp']:.1f}°C",
-                '湿度': f"{item['main']['humidity']}%",
-                '風速': f"{item['wind']['speed']} m/s"
-            })
-    return pd.DataFrame(processed_data)
-
-def create_map(start_coords, end_coords):
-    center_lat = (start_coords[0] + end_coords[0]) / 2
-    center_lng = (start_coords[1] + end_coords[1]) / 2
-    
-    m = folium.Map(location=[center_lat, center_lng], zoom_start=6)
-    
-    folium.Marker(
-        start_coords,
-        popup="出発地",
-        icon=folium.Icon(color="red", icon="info-sign"),
-    ).add_to(m)
-    
-    folium.Marker(
-        end_coords,
-        popup="目的地",
-        icon=folium.Icon(color="green", icon="info-sign"),
-    ).add_to(m)
-    
-    folium.PolyLine(
-        locations=[start_coords, end_coords],
-        color="blue",
-        weight=2,
-        opacity=0.8
-    ).add_to(m)
-    
-    return m
+    now = datetime.now()
+    directions_result = gmaps.directions(origin, destination, mode="driving", departure_time=now)
+    if directions_result:
+        leg = directions_result[0]['legs'][0]
+        return {
+            'distance': leg['distance']['text'],
+            'duration': leg['duration']['text'],
+            'duration_in_traffic': leg['duration_in_traffic']['text']
+        }
+    else:
+        raise ValueError(f"経路が見つかりませんでした: {origin} から {destination}")
 
 def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, aws_client):
     forecast_summary = process_forecast_data(forecast_data)
@@ -212,9 +132,49 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
         response_body = json.loads(response['body'].read())
         return response_body['content'][0]['text']
     except Exception as e:
-        logger.error(f"AI分析中にエラーが発生しました: {str(e)}")
         st.error(f"AI分析中にエラーが発生しました: {str(e)}")
         return "AI分析に失敗しました。基本的な情報のみ表示します。"
+
+def process_forecast_data(forecast_data):
+    processed_data = []
+    for item in forecast_data['list']:
+        date = datetime.fromtimestamp(item['dt'])
+        if date.hour == 12:  # 正午のデータのみを使用
+            processed_data.append({
+                '日付': date.strftime('%Y-%m-%d'),
+                '天気': item['weather'][0]['description'],
+                '気温': f"{item['main']['temp']:.1f}°C",
+                '湿度': f"{item['main']['humidity']}%",
+                '風速': f"{item['wind']['speed']} m/s"
+            })
+    return pd.DataFrame(processed_data)
+
+def create_map(start_coords, end_coords):
+    center_lat = (start_coords[0] + end_coords[0]) / 2
+    center_lng = (start_coords[1] + end_coords[1]) / 2
+    
+    m = folium.Map(location=[center_lat, center_lng], zoom_start=6)
+    
+    folium.Marker(
+        start_coords,
+        popup="出発地",
+        icon=folium.Icon(color="red", icon="info-sign"),
+    ).add_to(m)
+    
+    folium.Marker(
+        end_coords,
+        popup="目的地",
+        icon=folium.Icon(color="green", icon="info-sign"),
+    ).add_to(m)
+    
+    folium.PolyLine(
+        locations=[start_coords, end_coords],
+        color="blue",
+        weight=2,
+        opacity=0.8
+    ).add_to(m)
+    
+    return m
 
 def main():
     st.set_page_config(page_title="外出判断アプリ", page_icon="🏙️", layout="wide")
@@ -227,37 +187,42 @@ def main():
         st.session_state.logged_in = False
 
     if not st.session_state.logged_in:
-        access_key_id, secret_access_key = login_form()
+        st.subheader("ログイン")
+        username = st.text_input("ユーザー名")
+        password = st.text_input("パスワード", type="password")
         if st.button("ログイン"):
-            aws_client, account_id, user_arn = authenticate_aws(access_key_id, secret_access_key)
-            if aws_client:
+            if authenticate_user(username, password):
                 st.session_state.logged_in = True
-                st.session_state.aws_client = aws_client
-                st.success("AWS認証成功:")
-                st.write(f"アカウントID: {account_id}")
-                st.write(f"ARN: {user_arn}")
-                st.rerun()
+                st.success("ログインに成功しました！")
+                st.experimental_rerun()
+            else:
+                st.error("ログインに失敗しました。")
     else:
-        col1, col2 = st.columns(2)
+        # AWS認証情報の入力
+        aws_access_key_id = st.text_input("AWS Access Key ID", type="password")
+        aws_secret_access_key = st.text_input("AWS Secret Access Key", type="password")
 
-        with col1:
-            st.subheader("📍 場所情報")
-            start_location = st.text_input("出発地", "")
-            end_location = st.text_input("目的地", "")
-            purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
-            additional_question = st.text_input("追加の質問（オプション）", "")
+        if aws_access_key_id and aws_secret_access_key:
+            aws_client = initialize_aws_client(aws_access_key_id, aws_secret_access_key)
+            if aws_client:
+                col1, col2 = st.columns(2)
 
-        if st.button("外出判断を実行", key="run_analysis"):
-            with st.spinner("分析中..."):
-                try:
-                    start_coords = get_coordinates(start_location)
-                    end_coords = get_coordinates(end_location)
-                    if start_coords and end_coords:
-                        weather_data = get_weather(start_coords[0], start_coords[1])
-                        forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
-                        travel_info = get_travel_info(start_location, end_location)
+                with col1:
+                    st.subheader("📍 場所情報")
+                    start_location = st.text_input("出発地", "")
+                    end_location = st.text_input("目的地", "")
+                    purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
+                    additional_question = st.text_input("追加の質問（オプション）", "")
 
-                        if weather_data and forecast_data and travel_info:
+                if st.button("外出判断を実行", key="run_analysis"):
+                    with st.spinner("分析中..."):
+                        try:
+                            start_coords = get_coordinates(start_location)
+                            end_coords = get_coordinates(end_location)
+                            weather_data = get_weather(start_coords[0], start_coords[1])
+                            forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
+                            travel_info = get_travel_info(start_location, end_location)
+
                             with col2:
                                 st.subheader("🗺️ 位置情報")
                                 map = create_map(start_coords, end_coords)
@@ -285,21 +250,17 @@ def main():
                             with travel_col3:
                                 st.metric("交通状況考慮時間", travel_info['duration_in_traffic'])
 
-                            recommendation = analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, st.session_state.aws_client)
+                            recommendation = analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question, aws_client)
 
                             st.subheader("🤖 AIによる外出判断")
                             st.info(recommendation)
-                        else:
-                            st.error("天気情報または移動情報の取得に失敗しました。")
-                    else:
-                        st.error("座標の取得に失敗しました。正しい住所を入力してください。")
-                except Exception as e:
-                    st.error(f"エラーが発生しました: {str(e)}")
 
-        # ログアウトボタン
-        if st.button("ログアウト"):
-            st.session_state.clear()
-            st.rerun()
+                        except Exception as e:
+                            st.error(f"エラーが発生しました: {str(e)}")
+            else:
+                st.warning("有効なAWS認証情報を入力してください。")
+        else:
+            st.warning("AWS認証情報を入力してください。")
 
 if __name__ == "__main__":
     main()
