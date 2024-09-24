@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import logging
 import boto3
 import streamlit as st
+import boto3
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -41,21 +42,23 @@ def authenticate_aws(access_key_id, secret_access_key):
         account_id = caller_identity['Account']
         user_arn = caller_identity['Arn']
 
-        st.success("AWS認証成功:")
-        st.write(f"アカウントID: {account_id}")
-        st.write(f"ARN: {user_arn}")
-
         # Bedrock クライアントの初期化
         bedrock_client = boto3.client('bedrock-runtime',
                                       aws_access_key_id=access_key_id,
                                       aws_secret_access_key=secret_access_key,
                                       region_name=AWS_REGION)
         
-        return bedrock_client
+        return bedrock_client, account_id, user_arn
     except Exception as e:
         st.error(f"AWS認証エラー: {str(e)}")
-    
-    return None
+        return None, None, None
+
+def login_form():
+    st.write("AWSアカウントの認証情報を入力してください。")
+    st.warning("注意: アクセスキーとシークレットキーは安全に管理してください。")
+    access_key_id = st.text_input("AWS アクセスキーID")
+    secret_access_key = st.text_input("AWS シークレットアクセスキー", type="password")
+    return access_key_id, secret_access_key
 
 def get_weather(latitude, longitude):
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
@@ -219,32 +222,26 @@ def main():
     st.title("🏠🚗 外出判断アプリ")
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
 
-    # IAMユーザーログイン
-    def main():
-        st.title("外出判断アプリ")
-
     # セッション状態の初期化
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
 
     if not st.session_state.logged_in:
-        st.write("AWSアカウントの認証情報を入力してください。")
-        st.warning("注意: アクセスキーとシークレットキーは安全に管理してください。")
-        access_key_id = st.text_input("AWS アクセスキーID")
-        secret_access_key = st.text_input("AWS シークレットアクセスキー", type="password")
+        access_key_id, secret_access_key = login_form()
         if st.button("ログイン"):
-            aws_client = authenticate_aws(access_key_id, secret_access_key)
+            aws_client, account_id, user_arn = authenticate_aws(access_key_id, secret_access_key)
             if aws_client:
                 st.session_state.logged_in = True
                 st.session_state.aws_client = aws_client
-                st.experimental_rerun()
+                st.success("AWS認証成功:")
+                st.write(f"アカウントID: {account_id}")
+                st.write(f"ARN: {user_arn}")
+                st.rerun()
     else:
-    # ログイン後の処理
-        st.write("ログイン成功！アプリの機能をここに実装します。")
-        st.subheader("📍 場所情報")
         col1, col2 = st.columns(2)
-    
+
         with col1:
+            st.subheader("📍 場所情報")
             start_location = st.text_input("出発地", "")
             end_location = st.text_input("目的地", "")
             purpose = st.text_input("外出の目的（例：買い物、観光、ビジネス）", "")
@@ -264,7 +261,7 @@ def main():
                             with col2:
                                 st.subheader("🗺️ 位置情報")
                                 map = create_map(start_coords, end_coords)
-                                st.pyplot(map)
+                                folium_static(map)
 
                             st.subheader("🌤️ 現在の天気情報")
                             weather_col1, weather_col2 = st.columns(2)
@@ -299,11 +296,10 @@ def main():
                 except Exception as e:
                     st.error(f"エラーが発生しました: {str(e)}")
 
-    # ログアウトボタン
-    if st.button("ログアウト"):
-            st.session_state.logged_in = False
-            st.session_state.aws_client = None
-            st.experimental_rerun()
+        # ログアウトボタン
+        if st.button("ログアウト"):
+            st.session_state.clear()
+            st.rerun()
 
 if __name__ == "__main__":
     main()
