@@ -33,6 +33,8 @@ def get_weather(latitude, longitude):
 def get_weather_forecast(latitude, longitude):
     url = f"http://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
     response = requests.get(url)
+    # デバッグ: APIレスポンスの内容を確認
+    st.write("Forecast API Response:", response.json())  # この行を追加
     return response.json()
 
 def get_coordinates(address):
@@ -117,6 +119,8 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
 
 def process_forecast_data(forecast_data):
     processed_data = []
+    # デバッグ: forecast_dataの内容を確認
+    st.write("Forecast Data:", forecast_data)  # この行を追加
     for item in forecast_data['list']:
         date = datetime.fromtimestamp(item['dt'])
         if date.hour == 12:  # 正午のデータのみを使用
