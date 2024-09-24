@@ -16,7 +16,10 @@ load_dotenv()
 # API keys and endpoints
 OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-BEDROCK_CLIENT = boto3.client('bedrock-runtime')
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")  # デフォルトのリージョンを設定
+
+# Initialize Bedrock client with specified region
+BEDROCK_CLIENT = boto3.client('bedrock-runtime', region_name=AWS_REGION)
 
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
@@ -76,7 +79,7 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
     - 交通状況を考慮した所要時間: {travel_info['duration_in_traffic']}
 
     これらの情報を考慮して、以下の質問に答えてください：
-    1. 目的地に今すぐ行くべきでしょうか？それとも別の日に行くべきでしょうか？
+    1. 目的地に今日行くべきでしょうか？それとも別の日に行くべきでしょうか？
     2. もし別の日に行くべきだと判断した場合、5日間の予報の中でどの日が最適だと思われますか？
     3. 外出目的を達成するのに、現在および今後の天候はどのような影響を与えると予想されますか？
     4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？
@@ -157,6 +160,9 @@ def main():
 
     st.title("🏠🚗 外出判断アプリ")
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
+
+    # AWSリージョンの表示（デバッグ用）
+    st.sidebar.text(f"使用中のAWSリージョン: {AWS_REGION}")
 
     col1, col2 = st.columns(2)
 
