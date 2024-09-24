@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import boto3
 import googlemaps
 import pandas as pd
@@ -19,28 +19,32 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 BEDROCK_CLIENT = boto3.client('bedrock-runtime', region_name=AWS_REGION)
 
-# Initialize Bedrock client with specified region
-BEDROCK_CLIENT = boto3.client('bedrock-runtime', region_name=AWS_REGION)
-
 # Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 def get_weather(latitude, longitude):
     url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
-    response = requests.get(url)
-    return response.json()
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        st.error(f"現在の天気情報の取得中にエラーが発生しました: {str(e)}")
+        st.error(f"URL: {url}")
+        st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
+        return None
 
 def get_weather_forecast(latitude, longitude):
     url = f"http://api.openweathermap.org/data/2.5/forecast?lat={latitude}&lon={longitude}&appid={OPENWEATHERMAP_API_KEY}&units=metric&lang=ja"
     try:
         response = requests.get(url)
-        response.raise_for_status()  # HTTPエラーがある場合例外を発生させる
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"天気予報の取得中にエラーが発生しました: {str(e)}")
         st.error(f"URL: {url}")
         st.error(f"Response: {response.text if 'response' in locals() else 'No response'}")
-        return None  # エラーの場合はNoneを返す
+        return None
 
 def get_coordinates(address):
     result = gmaps.geocode(address)
@@ -64,6 +68,9 @@ def get_travel_info(origin, destination):
         raise ValueError(f"経路が見つかりませんでした: {origin} から {destination}")
 
 def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional_question):
+    if weather_data is None or forecast_data is None:
+        return "天気情報の取得に失敗したため、外出判断を行えません。"
+
     forecast_summary = process_forecast_data(forecast_data)
     forecast_text = forecast_summary.to_string(index=False)
 
@@ -124,18 +131,18 @@ def analyze_outing(weather_data, forecast_data, travel_info, purpose, additional
 
 def process_forecast_data(forecast_data):
     processed_data = []
-    # デバッグ: forecast_dataの内容を確認
-    st.write("Forecast Data:", forecast_data)  # この行を追加
+    current_date = datetime.now().date()
     for item in forecast_data['list']:
         date = datetime.fromtimestamp(item['dt'])
-        if date.hour == 12:  # 正午のデータのみを使用
-            processed_data.append({
-                '日付': date.strftime('%Y-%m-%d'),
-                '天気': item['weather'][0]['description'],
-                '気温': f"{item['main']['temp']:.1f}°C",
-                '湿度': f"{item['main']['humidity']}%",
-                '風速': f"{item['wind']['speed']} m/s"
-            })
+        if date.date() > current_date and len(processed_data) < 5:  # 今日を除く5日分のデータを取得
+            if date.hour == 12:  # 正午のデータのみを使用
+                processed_data.append({
+                    '日付': date.strftime('%Y-%m-%d'),
+                    '天気': item['weather'][0]['description'],
+                    '気温': f"{item['main']['temp']:.1f}°C",
+                    '湿度': f"{item['main']['humidity']}%",
+                    '風速': f"{item['wind']['speed']} m/s"
+                })
     return pd.DataFrame(processed_data)
 
 def create_map(start_coords, end_coords):
@@ -191,6 +198,10 @@ def main():
                 weather_data = get_weather(start_coords[0], start_coords[1])
                 forecast_data = get_weather_forecast(start_coords[0], start_coords[1])
                 travel_info = get_travel_info(start_location, end_location)
+
+                if weather_data is None or forecast_data is None:
+                    st.error("天気情報の取得に失敗しました。APIキーを確認してください。")
+                    return
 
                 with col2:
                     st.subheader("🗺️ 位置情報")
