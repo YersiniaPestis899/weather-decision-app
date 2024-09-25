@@ -13,9 +13,15 @@ import os
 # Load environment variables
 load_dotenv()
 
-# API keys
-OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+# Initialize session state for storing credentials
+if 'credentials' not in st.session_state:
+    st.session_state.credentials = {
+        'openweathermap_api_key': '',
+        'google_maps_api_key': '',
+        'aws_access_key_id': '',
+        'aws_secret_access_key': '',
+        'aws_region': 'us-east-1'
+    }
 
 def initialize_gmaps(api_key):
     return googlemaps.Client(key=api_key)
@@ -122,9 +128,9 @@ def analyze_outing(bedrock_client, weather_data, forecast_data, travel_info, pur
     4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？詳しく説明してください。
 
     追加の質問: {additional_question}
-    この追加の質問にも、具体的かつ詳細に答えてください。
+    この追加の質問にも、天気予報やマップからの情報を引用して具体的かつ詳細に答えてください。
 
-    回答は各質問に対して明確に分けて、天気と交通情報を引用し簡潔にまとめてください。
+    回答は各質問に対して明確に分けて、簡潔にまとめてください。
     """
 
     messages = [
@@ -160,18 +166,53 @@ def main():
     st.title("🏠🚗 外出判断アプリ")
     st.write("天気と交通情報に基づいて、目的地に行くべきかどうかを判断します。")
 
-    # API key inputs
-    st.sidebar.header("API Keys")
-    openweathermap_api_key = st.sidebar.text_input("OpenWeatherMap API Key", value=OPENWEATHERMAP_API_KEY or "", type="password")
-    google_maps_api_key = st.sidebar.text_input("Google Maps API Key", value=GOOGLE_MAPS_API_KEY or "", type="password")
+    # API key and AWS credential inputs
+    st.sidebar.header("API Keys and AWS Credentials")
+    
+    # OpenWeatherMap API Key
+    openweathermap_api_key = st.sidebar.text_input(
+        "OpenWeatherMap API Key", 
+        value=st.session_state.credentials['openweathermap_api_key'], 
+        type="password"
+    )
+    save_openweathermap = st.sidebar.checkbox("OpenWeatherMap API Keyを保存", value=bool(st.session_state.credentials['openweathermap_api_key']))
 
-    # AWS認証情報の入力
-    st.sidebar.header("AWS認証情報")
-    aws_access_key_id = st.sidebar.text_input("AWS Access Key ID", type="password")
-    aws_secret_access_key = st.sidebar.text_input("AWS Secret Access Key", type="password")
-    aws_region = st.sidebar.text_input("AWSリージョン", value="ap-northeast-1")
+    # Google Maps API Key
+    google_maps_api_key = st.sidebar.text_input(
+        "Google Maps API Key", 
+        value=st.session_state.credentials['google_maps_api_key'], 
+        type="password"
+    )
+    save_googlemaps = st.sidebar.checkbox("Google Maps API Keyを保存", value=bool(st.session_state.credentials['google_maps_api_key']))
 
-    st.sidebar.warning("注意: API AWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
+    # AWS Credentials
+    aws_access_key_id = st.sidebar.text_input(
+        "AWS Access Key ID", 
+        value=st.session_state.credentials['aws_access_key_id'], 
+        type="password"
+    )
+    aws_secret_access_key = st.sidebar.text_input(
+        "AWS Secret Access Key", 
+        value=st.session_state.credentials['aws_secret_access_key'], 
+        type="password"
+    )
+    aws_region = st.sidebar.text_input(
+        "AWSリージョン", 
+        value=st.session_state.credentials['aws_region']
+    )
+    save_aws = st.sidebar.checkbox("AWS認証情報を保存", value=bool(st.session_state.credentials['aws_access_key_id']))
+
+    # Save credentials if checkboxes are checked
+    if save_openweathermap:
+        st.session_state.credentials['openweathermap_api_key'] = openweathermap_api_key
+    if save_googlemaps:
+        st.session_state.credentials['google_maps_api_key'] = google_maps_api_key
+    if save_aws:
+        st.session_state.credentials['aws_access_key_id'] = aws_access_key_id
+        st.session_state.credentials['aws_secret_access_key'] = aws_secret_access_key
+        st.session_state.credentials['aws_region'] = aws_region
+
+    st.sidebar.warning("注意: APIやAWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
 
     # 入力チェック
     if not google_maps_api_key:
