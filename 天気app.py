@@ -13,9 +13,9 @@ import os
 # Load environment variables
 load_dotenv()
 
-# API keys
-OPENWEATHERMAP_API_KEY = os.getenv("OPENWEATHERMAP_API_KEY")
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+# API keys are now initialized as empty strings
+OPENWEATHERMAP_API_KEY = ""
+GOOGLE_MAPS_API_KEY = ""
 
 def initialize_gmaps(api_key):
     return googlemaps.Client(key=api_key)
@@ -122,7 +122,7 @@ def analyze_outing(bedrock_client, weather_data, forecast_data, travel_info, pur
     4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？詳しく説明してください。
 
     追加の質問: {additional_question}
-    この追加の質問にも、APIからの情報を引用し具体的かつ詳細に答えてください。
+    この追加の質問にも、具体的かつ詳細に答えてください。
 
     回答は各質問に対して明確に分けて、簡潔にまとめてください。
     """
@@ -162,8 +162,8 @@ def main():
 
     # API key inputs
     st.sidebar.header("API Keys")
-    openweathermap_api_key = st.sidebar.text_input("OpenWeatherMap API Key", value=OPENWEATHERMAP_API_KEY or "", type="password")
-    google_maps_api_key = st.sidebar.text_input("Google Maps API Key", value=GOOGLE_MAPS_API_KEY or "", type="password")
+    openweathermap_api_key = st.sidebar.text_input("OpenWeatherMap API Key", value="", type="password")
+    google_maps_api_key = st.sidebar.text_input("Google Maps API Key", value="", type="password")
 
     # AWS認証情報の入力
     st.sidebar.header("AWS認証情報")
@@ -171,7 +171,7 @@ def main():
     aws_secret_access_key = st.sidebar.text_input("AWS Secret Access Key", type="password")
     aws_region = st.sidebar.text_input("AWSリージョン", value="")
 
-    st.sidebar.warning("注意: APIやAWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
+    st.sidebar.warning("注意: APIキーとAWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
 
     # 入力チェック
     if not google_maps_api_key:
