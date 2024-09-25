@@ -122,7 +122,7 @@ def analyze_outing(bedrock_client, weather_data, forecast_data, travel_info, pur
     4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？詳しく説明してください。
 
     追加の質問: {additional_question}
-    この追加の質問にも、APIから取得した情報を引用し具体的かつ詳細に答えてください。
+    この追加の質問にも、APIからの情報を引用し具体的かつ詳細に答えてください。
 
     回答は各質問に対して明確に分けて、簡潔にまとめてください。
     """
