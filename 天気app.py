@@ -13,15 +13,30 @@ import os
 # Load environment variables
 load_dotenv()
 
-# Initialize session state for storing credentials
-if 'credentials' not in st.session_state:
-    st.session_state.credentials = {
+# File to store credentials
+CREDENTIALS_FILE = 'credentials.json'
+
+# Function to load credentials from file
+def load_credentials():
+    if os.path.exists(CREDENTIALS_FILE):
+        with open(CREDENTIALS_FILE, 'r') as f:
+            return json.load(f)
+    return {
         'openweathermap_api_key': '',
         'google_maps_api_key': '',
         'aws_access_key_id': '',
         'aws_secret_access_key': '',
         'aws_region': 'us-east-1'
     }
+
+# Function to save credentials to file
+def save_credentials(credentials):
+    with open(CREDENTIALS_FILE, 'w') as f:
+        json.dump(credentials, f)
+
+# Load credentials
+if 'credentials' not in st.session_state:
+    st.session_state.credentials = load_credentials()
 
 def initialize_gmaps(api_key):
     return googlemaps.Client(key=api_key)
@@ -128,7 +143,7 @@ def analyze_outing(bedrock_client, weather_data, forecast_data, travel_info, pur
     4. 移動時間や交通状況を考慮すると、外出のタイミングについて何か助言はありますか？詳しく説明してください。
 
     追加の質問: {additional_question}
-    この追加の質問にも、天気予報やマップからの情報を引用して具体的かつ詳細に答えてください。
+    この追加の質問にも、天気予報と交通状況を引用し具体的かつ詳細に答えてください。
 
     回答は各質問に対して明確に分けて、簡潔にまとめてください。
     """
@@ -203,18 +218,22 @@ def main():
     save_aws = st.sidebar.checkbox("AWS認証情報を保存", value=bool(st.session_state.credentials['aws_access_key_id']))
 
     # Save credentials if checkboxes are checked
-    if save_openweathermap:
-        st.session_state.credentials['openweathermap_api_key'] = openweathermap_api_key
-    if save_googlemaps:
-        st.session_state.credentials['google_maps_api_key'] = google_maps_api_key
-    if save_aws:
-        st.session_state.credentials['aws_access_key_id'] = aws_access_key_id
-        st.session_state.credentials['aws_secret_access_key'] = aws_secret_access_key
-        st.session_state.credentials['aws_region'] = aws_region
+    if st.sidebar.button("認証情報を保存"):
+        if save_openweathermap:
+            st.session_state.credentials['openweathermap_api_key'] = openweathermap_api_key
+        if save_googlemaps:
+            st.session_state.credentials['google_maps_api_key'] = google_maps_api_key
+        if save_aws:
+            st.session_state.credentials['aws_access_key_id'] = aws_access_key_id
+            st.session_state.credentials['aws_secret_access_key'] = aws_secret_access_key
+            st.session_state.credentials['aws_region'] = aws_region
+        
+        save_credentials(st.session_state.credentials)
+        st.sidebar.success("認証情報が保存されました。")
 
     st.sidebar.warning("注意: APIやAWS認証情報は慎重に扱ってください。この情報を他人と共有しないでください。")
 
-    # 入力チェック
+    # Input validation
     if not google_maps_api_key:
         st.error("Google Maps API Keyを入力してください。")
         return
@@ -223,7 +242,7 @@ def main():
         st.error("OpenWeatherMap API Keyを入力してください。")
         return
 
-    # Google Maps clientの初期化
+    # Initialize Google Maps client
     try:
         gmaps = initialize_gmaps(google_maps_api_key)
     except ValueError as e:
@@ -247,7 +266,7 @@ def main():
         else:
             with st.spinner("分析中..."):
                 try:
-                    # AWS認証情報を使用してBedrockクライアントを初期化
+                    # Initialize Bedrock client with AWS credentials
                     bedrock_client = boto3.client('bedrock-runtime', 
                                                   region_name=aws_region,
                                                   aws_access_key_id=aws_access_key_id,
